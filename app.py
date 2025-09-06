@@ -16,8 +16,29 @@ import platform
 # --------------------------
 # Google API Configuration
 # --------------------------
-GOOGLE_API_KEY = "AIzaSyDKvWRDWJLGRa-Te0skufDsmfLAjlIlQe4"  # Replace with your key
-MODEL = "models/text-bison-001"       # Replace with model from ListModels
+GOOGLE_API_KEY = "AIzaSyDKvWRDWJLGRa-Te0skufDsmfLAjlIlQe4"  # Replace with your API key
+
+# --------------------------
+# Fetch available models
+# --------------------------
+def get_available_model(api_key):
+    try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+        res = requests.get(url).json()
+        models = res.get("models", [])
+        if not models:
+            return None
+        # Pick first text-generative model
+        for m in models:
+            if "text" in m.get("displayName", "").lower() or "bison" in m.get("name", "").lower():
+                return m["name"]
+        return models[0]["name"]  # fallback
+    except Exception as e:
+        return None
+
+MODEL = get_available_model(GOOGLE_API_KEY)
+if MODEL is None:
+    st.error("No valid Google Generative AI model found. Check your API key or project permissions.")
 
 # --------------------------
 # Chat function via REST API
@@ -32,7 +53,7 @@ def ask_gemini(prompt):
         }
         res = requests.post(url, json=payload).json()
 
-        # Check for legacy "candidates" key
+        # Legacy "candidates"
         if "candidates" in res and len(res["candidates"]) > 0:
             return res["candidates"][0].get("outputText", "No text returned")
         # New API format
@@ -161,7 +182,7 @@ def membership_inference_attack(df, target_col, clf_choice="LogisticRegression")
     return {"mia_accuracy": float(acc), "binary": len(np.unique(y)) == 2}, clf
 
 # --------------------------
-# Streamlit App
+# Streamlit App for Dataset
 # --------------------------
 uploaded_file = st.file_uploader("Upload your dataset (CSV only)", type=["csv"])
 if uploaded_file is not None:
