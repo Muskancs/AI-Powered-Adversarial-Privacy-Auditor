@@ -12,7 +12,7 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 import asyncio
 import io
 import platform
-import google-generativeai as genai
+import google.generativeai as genai
 from sklearn.ensemble import RandomForestClassifier
 
 GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"] if "GOOGLE_API_KEY" in st.secrets else st.text_input("Enter your Google API key", type="password")
