@@ -84,9 +84,13 @@ def membership_inference_attack(df, target_col):
     if len(np.unique(y)) < 2:
         return {"mia_accuracy": 0.0, "binary": False}, None
     X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.5, random_state=7)
+    # --- FIX: Use the preprocessor here ---
+    pre = build_preprocessor(X_tr)
+    X_tr_p = pre.fit_transform(X_tr)
+    X_te_p = pre.transform(X_te)
     clf = LogisticRegression(max_iter=2000, solver="lbfgs", class_weight="balanced")
-    clf.fit(X_tr, y_tr)
-    preds = clf.predict(X_te)
+    clf.fit(X_tr_p, y_tr)
+    preds = clf.predict(X_te_p)
     acc = accuracy_score(y_te, preds)
     return {"mia_accuracy": float(acc), "binary": len(np.unique(y)) == 2}, clf
 
