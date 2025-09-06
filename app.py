@@ -12,6 +12,7 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 import asyncio
 import io
 import platform
+from sklearn.ensemble import RandomForestClassifier
 
 # Set random seed for reproducibility
 RANDOM_STATE = 42
@@ -75,7 +76,7 @@ def apply_k_anonymity(df, qis, k=3):
     keep_keys = sizes[sizes >= k].index
     return anon[anon["QIKey"].isin(keep_keys)].drop(columns=["QIKey"]).reset_index(drop=True)
 
-def membership_inference_attack(df, target_col):
+def membership_inference_attack(df, target_col, clf_choice="LogisticRegression"):
     feat_cols = [c for c in df.columns if c != target_col]
     if len(feat_cols) == 0 or len(df) < 2:
         return {"mia_accuracy": 0.0, "binary": False}, None
@@ -85,11 +86,13 @@ def membership_inference_attack(df, target_col):
     if len(np.unique(y)) < 2:
         return {"mia_accuracy": 0.0, "binary": False}, None
     X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.5, random_state=7)
-    # --- FIX: Use the preprocessor here ---
     pre = build_preprocessor(X_tr)
     X_tr_p = pre.fit_transform(X_tr)
     X_te_p = pre.transform(X_te)
-    clf = LogisticRegression(max_iter=2000, solver="lbfgs", class_weight="balanced")
+    if clf_choice == "RandomForest":
+        clf = RandomForestClassifier(n_estimators=100, random_state=42)
+    else:
+        clf = LogisticRegression(max_iter=2000, solver="lbfgs", class_weight="balanced")
     clf.fit(X_tr_p, y_tr)
     preds = clf.predict(X_te_p)
     acc = accuracy_score(y_te, preds)
@@ -113,21 +116,25 @@ async def main():
         qis = st.multiselect("Select quasi-identifiers (QIs)", options=list(raw_df.columns))
         sensitive_col = st.selectbox("Select sensitive column", options=list(raw_df.columns))
         target_col = st.selectbox("Select target column for Membership Inference", options=list(raw_df.columns))
-
+        k_val = st.selectbox("Select k for k-anonymity", options=[2, 3, 5, 10], index=1)
+        clf_choice = st.selectbox("Classifier for MIA", options=["LogisticRegression", "RandomForest"])
         if st.button("Run Audit"):
             with st.spinner("Running privacy audit..."):
                 # Apply k-anonymity
                 anon_df = apply_k_anonymity(raw_df, qis, k=3)
                 
                 # Run MIA on raw and anonymized data
-                mia_metrics_raw, _ = membership_inference_attack(raw_df, target_col)
-                mia_metrics_anon, _ = membership_inference_attack(anon_df, target_col)
+                mia_metrics_raw, _ = membership_inference_attack(raw_df, target_col, clf_choice)
+                mia_metrics_anon, _ = membership_inference_attack(anon_df, target_col, clf_choice)
                 
                 # Display results
                 st.write("**Results:**")
                 st.write(f"Raw MIA Accuracy: {mia_metrics_raw['mia_accuracy']:.3f}")
                 st.write(f"Anonymized MIA Accuracy: {mia_metrics_anon['mia_accuracy']:.3f}")
-                
+                st.write("**Class balance in target column (raw):**")
+                st.write(raw_df[target_col].value_counts())
+                st.write("**Class balance in target column (anonymized):**")
+                st.write(anon_df[target_col].value_counts())
                 # Visualization
                 fig, ax = plt.subplots()
                 sns.histplot(data=raw_df, x=sensitive_col, kde=False, ax=ax, label="Raw")
@@ -154,6 +161,10 @@ async def main():
                     file_name='anonymized_data.csv',
                     mime='text/csv'
                 )
+        anon_df = apply_k_anonymity(raw_df, qis, k=k_val)
+        mia_metrics_anon, _ = membership_inference_attack(anon_df, target_col)
+        st.write(f"**k-anonymity value used:** {k_val}")
+        st.write(f"Anonymized MIA Accuracy (k={k_val}): {mia_metrics_anon['mia_accuracy']:.3f}")
 
 if platform.system() == "Emscripten":
     asyncio.ensure_future(main())
