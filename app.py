@@ -16,7 +16,7 @@ import platform
 # --------------------------
 # Configure Google API key
 # --------------------------
-GOOGLE_API_KEY = "YOUR_API_KEY_HERE"  # Replace with your key
+GOOGLE_API_KEY = "AIzaSyDKvWRDWJLGRa-Te0skufDsmfLAjlIlQe4"  # Replace with your key
 MODEL = "models/text-bison-001"       # Available model
 
 # --------------------------
