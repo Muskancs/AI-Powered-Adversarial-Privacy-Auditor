@@ -12,8 +12,40 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 import asyncio
 import io
 import platform
+import google-generativeai as genai
 from sklearn.ensemble import RandomForestClassifier
 
+GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"] if "GOOGLE_API_KEY" in st.secrets else st.text_input("Enter your Google API key", type="password")
+if GOOGLE_API_KEY:
+    genai.configure(api_key=GOOGLE_API_KEY)
+
+st.markdown("### 🤖 Ask the Privacy Bot (powered by Google Gemini)")
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
+user_input = st.chat_input("Ask me about k-anonymity, classifiers, or privacy...")
+
+if user_input:
+    st.session_state.chat_history.append(("user", user_input))
+    answer = ask_gemini(user_input)
+    st.session_state.chat_history.append(("bot", answer))
+
+for speaker, msg in st.session_state.chat_history:
+    if speaker == "user":
+        st.chat_message("user").write(msg)
+    else:
+        st.chat_message("assistant").write(msg)
+
+def ask_gemini(prompt):
+    if not GOOGLE_API_KEY:
+        return "Please enter your Google API key above."
+    try:
+        model = genai.GenerativeModel("gemini-pro")  # or another model if available
+        response = model.generate_content(prompt)
+        return response.text.strip()
+    except Exception as e:
+        return f"Error: {e}"
+        
 # Set random seed for reproducibility
 RANDOM_STATE = 42
 np.random.seed(RANDOM_STATE)
