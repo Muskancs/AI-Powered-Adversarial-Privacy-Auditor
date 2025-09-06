@@ -15,10 +15,8 @@ import platform
 import google.generativeai as genai
 from sklearn.ensemble import RandomForestClassifier
 
-GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"] if "GOOGLE_API_KEY" in st.secrets else st.text_input("Enter your Google API key", type="password")
-if GOOGLE_API_KEY:
-    genai.configure(api_key=GOOGLE_API_KEY)
-
+GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
+genai.configure(api_key=GOOGLE_API_KEY)
 st.markdown("### 🤖 Ask the Privacy Bot (powered by Google Gemini)")
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
