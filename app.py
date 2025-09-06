@@ -10,6 +10,7 @@ from sklearn.metrics import accuracy_score, classification_report
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 import asyncio
+import io
 import platform
 
 # Set random seed for reproducibility
@@ -134,6 +135,25 @@ async def main():
                 ax.set_title("Sensitive Attribute Distribution")
                 ax.legend()
                 st.pyplot(fig)
+                if qis:
+                    anon_df["QIKey"] = anon_df[qis].astype(str).agg("|".join, axis=1)
+                    k_sizes = anon_df.groupby("QIKey").size()
+                    st.write(f"Number of QI groups (after anonymization): {len(k_sizes)}")
+                    st.write(f"Minimum group size: {k_sizes.min() if not k_sizes.empty else 0}")
+                if qis:
+                    qi_to_plot = qis[0]
+                    fig2, ax2 = plt.subplots()
+                    sns.countplot(data=anon_df, x=qi_to_plot, ax=ax2)
+                    ax2.set_title(f"Distribution of QI: {qi_to_plot} (Anonymized)")
+                    plt.xticks(rotation=45)
+                    st.pyplot(fig2)
+                csv = anon_df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="Download Anonymized Data as CSV",
+                    data=csv,
+                    file_name='anonymized_data.csv',
+                    mime='text/csv'
+                )
 
 if platform.system() == "Emscripten":
     asyncio.ensure_future(main())
