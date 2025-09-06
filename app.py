@@ -11,62 +11,32 @@ from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 import requests
-import platform
 
 # --------------------------
-# Google API Configuration
+# Google Generative AI config
 # --------------------------
-GOOGLE_API_KEY = "AIzaSyDKvWRDWJLGRa-Te0skufDsmfLAjlIlQe4"  # Replace with your API key
+GOOGLE_API_KEY = "AIzaSyDKvWRDWJLGRa-Te0skufDsmfLAjlIlQe4"  # Your API key
+MODEL = "models/gemini-1.5-pro-latest"
 
-# --------------------------
-# Fetch available models
-# --------------------------
-def get_available_model(api_key):
-    try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
-        res = requests.get(url).json()
-        models = res.get("models", [])
-        if not models:
-            return None
-        # Pick first text-generative model
-        for m in models:
-            if "text" in m.get("displayName", "").lower() or "bison" in m.get("name", "").lower():
-                return m["name"]
-        return models[0]["name"]  # fallback
-    except Exception as e:
-        return None
-
-MODEL = get_available_model(GOOGLE_API_KEY)
-if MODEL is None:
-    st.error("No valid Google Generative AI model found. Check your API key or project permissions.")
-
-# --------------------------
-# Chat function via REST API
-# --------------------------
 def ask_gemini(prompt):
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/{MODEL}:generateText?key={GOOGLE_API_KEY}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/{MODEL}:generateContent?key={GOOGLE_API_KEY}"
         payload = {
-            "prompt": {"text": prompt},
+            "prompt": [{"text": prompt}],
             "temperature": 0.7,
-            "maxOutputTokens": 256
+            "candidateCount": 1,
+            "maxOutputTokens": 512
         }
         res = requests.post(url, json=payload).json()
-
-        # Legacy "candidates"
+        # Extract generated text
         if "candidates" in res and len(res["candidates"]) > 0:
-            return res["candidates"][0].get("outputText", "No text returned")
-        # New API format
-        elif "output" in res and len(res["output"]) > 0:
-            content = res["output"][0].get("content", [])
-            if len(content) > 0:
-                return content[0].get("text", "No text returned")
+            return res["candidates"][0].get("output", {}).get("content", [{}])[0].get("text", "No text returned")
         return "No text returned from API."
     except Exception as e:
         return f"Error: {e}"
 
 # --------------------------
-# Streamlit Chat UI
+# Streamlit chat UI
 # --------------------------
 st.markdown("### 🤖 Ask the Privacy Bot")
 if "chat_history" not in st.session_state:
@@ -120,7 +90,7 @@ def build_preprocessor(df, drop_cols=None):
     return pre
 
 # --------------------------
-# Helper Functions
+# Helper functions
 # --------------------------
 def clean_dataframe(df):
     df = df.copy()
@@ -182,12 +152,12 @@ def membership_inference_attack(df, target_col, clf_choice="LogisticRegression")
     return {"mia_accuracy": float(acc), "binary": len(np.unique(y)) == 2}, clf
 
 # --------------------------
-# Streamlit App for Dataset
+# Streamlit dataset UI
 # --------------------------
 uploaded_file = st.file_uploader("Upload your dataset (CSV only)", type=["csv"])
 if uploaded_file is not None:
     raw_df = pd.read_csv(uploaded_file)
-    st.write("Dataset loaded with", raw_df.shape[0], "rows and", raw_df.shape[1], "columns.")
+    st.write(f"Dataset loaded with {raw_df.shape[0]} rows and {raw_df.shape[1]} columns.")
     st.write("Columns:", list(raw_df.columns))
 
     raw_df = clean_dataframe(raw_df)
@@ -207,6 +177,7 @@ if uploaded_file is not None:
             st.write("**Results:**")
             st.write(f"Raw MIA Accuracy: {mia_metrics_raw['mia_accuracy']:.3f}")
             st.write(f"Anonymized MIA Accuracy: {mia_metrics_anon['mia_accuracy']:.3f}")
+
             st.write("**Class balance in target column (raw):**")
             st.write(raw_df[target_col].value_counts())
             st.write("**Class balance in target column (anonymized):**")
@@ -220,6 +191,7 @@ if uploaded_file is not None:
             ax.legend()
             st.pyplot(fig)
 
+            # QI groups info
             if qis:
                 anon_df["QIKey"] = anon_df[qis].astype(str).agg("|".join, axis=1)
                 k_sizes = anon_df.groupby("QIKey").size()
