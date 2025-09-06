@@ -14,10 +14,10 @@ import requests
 import platform
 
 # --------------------------
-# Configure Google API key
+# Google API Configuration
 # --------------------------
-GOOGLE_API_KEY = "AIzaSyDKvWRDWJLGRa-Te0skufDsmfLAjlIlQe4"  # Replace with your key
-MODEL = "models/text-bison-001"       # Available model
+GOOGLE_API_KEY = "YOUR_API_KEY_HERE"  # Replace with your key
+MODEL = "models/text-bison-001"       # Replace with model from ListModels
 
 # --------------------------
 # Chat function via REST API
@@ -30,8 +30,17 @@ def ask_gemini(prompt):
             "temperature": 0.7,
             "maxOutputTokens": 256
         }
-        response = requests.post(url, json=payload).json()
-        return response['candidates'][0]['outputText']
+        res = requests.post(url, json=payload).json()
+
+        # Check for legacy "candidates" key
+        if "candidates" in res and len(res["candidates"]) > 0:
+            return res["candidates"][0].get("outputText", "No text returned")
+        # New API format
+        elif "output" in res and len(res["output"]) > 0:
+            content = res["output"][0].get("content", [])
+            if len(content) > 0:
+                return content[0].get("text", "No text returned")
+        return "No text returned from API."
     except Exception as e:
         return f"Error: {e}"
 
@@ -205,6 +214,7 @@ if uploaded_file is not None:
                 plt.xticks(rotation=45)
                 st.pyplot(fig2)
 
+            # Download anonymized CSV
             csv = anon_df.to_csv(index=False).encode('utf-8')
             st.download_button(
                 label="Download Anonymized Data as CSV",
