@@ -10,33 +10,38 @@ from sklearn.metrics import accuracy_score
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.ensemble import RandomForestClassifier
-import google.generativeai as genai
-import asyncio
+import requests
 import platform
 
 # --------------------------
-# Configure Google Generative AI
+# Configure Google API key
 # --------------------------
-GOOGLE_API_KEY = "AIzaSyDKvWRDWJLGRa-Te0skufDsmfLAjlIlQe4"
-genai.configure(api_key=GOOGLE_API_KEY)
+GOOGLE_API_KEY = "YOUR_API_KEY_HERE"  # Replace with your key
+MODEL = "models/text-bison-001"       # Available model
 
-st.markdown("### 🤖 Ask the Privacy Bot (powered by Google Generative AI)")
-
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-
+# --------------------------
+# Chat function via REST API
+# --------------------------
 def ask_gemini(prompt):
-    """Ask the Generative AI model for a response."""
     try:
-        model = genai.GenerativeModel("models/text-bison-001")  # valid model
-        response = model.generate_content(prompt)
-        return response.text.strip()
+        url = f"https://generativelanguage.googleapis.com/v1beta/{MODEL}:generateText?key={GOOGLE_API_KEY}"
+        payload = {
+            "prompt": {"text": prompt},
+            "temperature": 0.7,
+            "maxOutputTokens": 256
+        }
+        response = requests.post(url, json=payload).json()
+        return response['candidates'][0]['outputText']
     except Exception as e:
         return f"Error: {e}"
 
 # --------------------------
-# Chat input
+# Streamlit Chat UI
 # --------------------------
+st.markdown("### 🤖 Ask the Privacy Bot")
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
 user_input = st.chat_input("Ask me about k-anonymity, classifiers, or privacy...")
 if user_input:
     st.session_state.chat_history.append(("user", user_input))
@@ -149,70 +154,61 @@ def membership_inference_attack(df, target_col, clf_choice="LogisticRegression")
 # --------------------------
 # Streamlit App
 # --------------------------
-async def main():
-    st.title("AI Adversarial Privacy Auditor")
+uploaded_file = st.file_uploader("Upload your dataset (CSV only)", type=["csv"])
+if uploaded_file is not None:
+    raw_df = pd.read_csv(uploaded_file)
+    st.write("Dataset loaded with", raw_df.shape[0], "rows and", raw_df.shape[1], "columns.")
+    st.write("Columns:", list(raw_df.columns))
 
-    uploaded_file = st.file_uploader("Upload your dataset (CSV only)", type=["csv"])
-    if uploaded_file is not None:
-        raw_df = pd.read_csv(uploaded_file)
-        st.write("Dataset loaded with", raw_df.shape[0], "rows and", raw_df.shape[1], "columns.")
-        st.write("Columns:", list(raw_df.columns))
+    raw_df = clean_dataframe(raw_df)
 
-        raw_df = clean_dataframe(raw_df)
+    qis = st.multiselect("Select quasi-identifiers (QIs)", options=list(raw_df.columns))
+    sensitive_col = st.selectbox("Select sensitive column", options=list(raw_df.columns))
+    target_col = st.selectbox("Select target column for Membership Inference", options=list(raw_df.columns))
+    k_val = st.selectbox("Select k for k-anonymity", options=[2,3,5,10], index=1)
+    clf_choice = st.selectbox("Classifier for MIA", options=["LogisticRegression", "RandomForest"])
 
-        qis = st.multiselect("Select quasi-identifiers (QIs)", options=list(raw_df.columns))
-        sensitive_col = st.selectbox("Select sensitive column", options=list(raw_df.columns))
-        target_col = st.selectbox("Select target column for Membership Inference", options=list(raw_df.columns))
-        k_val = st.selectbox("Select k for k-anonymity", options=[2,3,5,10], index=1)
-        clf_choice = st.selectbox("Classifier for MIA", options=["LogisticRegression", "RandomForest"])
+    if st.button("Run Audit"):
+        with st.spinner("Running privacy audit..."):
+            anon_df = apply_k_anonymity(raw_df, qis, k=k_val)
+            mia_metrics_raw, _ = membership_inference_attack(raw_df, target_col, clf_choice)
+            mia_metrics_anon, _ = membership_inference_attack(anon_df, target_col, clf_choice)
 
-        if st.button("Run Audit"):
-            with st.spinner("Running privacy audit..."):
-                anon_df = apply_k_anonymity(raw_df, qis, k=k_val)
-                mia_metrics_raw, _ = membership_inference_attack(raw_df, target_col, clf_choice)
-                mia_metrics_anon, _ = membership_inference_attack(anon_df, target_col, clf_choice)
+            st.write("**Results:**")
+            st.write(f"Raw MIA Accuracy: {mia_metrics_raw['mia_accuracy']:.3f}")
+            st.write(f"Anonymized MIA Accuracy: {mia_metrics_anon['mia_accuracy']:.3f}")
+            st.write("**Class balance in target column (raw):**")
+            st.write(raw_df[target_col].value_counts())
+            st.write("**Class balance in target column (anonymized):**")
+            st.write(anon_df[target_col].value_counts())
 
-                st.write("**Results:**")
-                st.write(f"Raw MIA Accuracy: {mia_metrics_raw['mia_accuracy']:.3f}")
-                st.write(f"Anonymized MIA Accuracy: {mia_metrics_anon['mia_accuracy']:.3f}")
-                st.write("**Class balance in target column (raw):**")
-                st.write(raw_df[target_col].value_counts())
-                st.write("**Class balance in target column (anonymized):**")
-                st.write(anon_df[target_col].value_counts())
+            # Visualization
+            fig, ax = plt.subplots()
+            sns.histplot(data=raw_df, x=sensitive_col, kde=False, ax=ax, label="Raw")
+            sns.histplot(data=anon_df, x=sensitive_col, kde=False, ax=ax, label="Anonymized")
+            ax.set_title("Sensitive Attribute Distribution")
+            ax.legend()
+            st.pyplot(fig)
 
-                # Visualization
-                fig, ax = plt.subplots()
-                sns.histplot(data=raw_df, x=sensitive_col, kde=False, ax=ax, label="Raw")
-                sns.histplot(data=anon_df, x=sensitive_col, kde=False, ax=ax, label="Anonymized")
-                ax.set_title("Sensitive Attribute Distribution")
-                ax.legend()
-                st.pyplot(fig)
+            if qis:
+                anon_df["QIKey"] = anon_df[qis].astype(str).agg("|".join, axis=1)
+                k_sizes = anon_df.groupby("QIKey").size()
+                st.write(f"Number of QI groups (after anonymization): {len(k_sizes)}")
+                st.write(f"Minimum group size: {k_sizes.min() if not k_sizes.empty else 0}")
 
-                if qis:
-                    anon_df["QIKey"] = anon_df[qis].astype(str).agg("|".join, axis=1)
-                    k_sizes = anon_df.groupby("QIKey").size()
-                    st.write(f"Number of QI groups (after anonymization): {len(k_sizes)}")
-                    st.write(f"Minimum group size: {k_sizes.min() if not k_sizes.empty else 0}")
+            # Distribution of first QI
+            if qis:
+                qi_to_plot = qis[0]
+                fig2, ax2 = plt.subplots()
+                sns.countplot(data=anon_df, x=qi_to_plot, ax=ax2)
+                ax2.set_title(f"Distribution of QI: {qi_to_plot} (Anonymized)")
+                plt.xticks(rotation=45)
+                st.pyplot(fig2)
 
-                # Distribution of first QI
-                if qis:
-                    qi_to_plot = qis[0]
-                    fig2, ax2 = plt.subplots()
-                    sns.countplot(data=anon_df, x=qi_to_plot, ax=ax2)
-                    ax2.set_title(f"Distribution of QI: {qi_to_plot} (Anonymized)")
-                    plt.xticks(rotation=45)
-                    st.pyplot(fig2)
-
-                csv = anon_df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="Download Anonymized Data as CSV",
-                    data=csv,
-                    file_name='anonymized_data.csv',
-                    mime='text/csv'
-                )
-
-if platform.system() == "Emscripten":
-    asyncio.ensure_future(main())
-else:
-    if __name__ == "__main__":
-        asyncio.run(main())
+            csv = anon_df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="Download Anonymized Data as CSV",
+                data=csv,
+                file_name='anonymized_data.csv',
+                mime='text/csv'
+            )
