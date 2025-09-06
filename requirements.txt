@@ -4,4 +4,4 @@ streamlit
 matplotlib
 seaborn
 scikit-learn
-google.generativeai
+google-generativeai
