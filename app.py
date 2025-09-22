@@ -1,3 +1,5 @@
+#LIBRARIES
+
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -12,10 +14,9 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 import requests
 
-# --------------------------
-# Google Generative AI config
-# --------------------------
-GOOGLE_API_KEY = "add-your-own-API"  # Your API key
+#GOOGLE-GEMINI-CONFIGURATION
+
+GOOGLE_API_KEY = "add-your-own-API"
 MODEL = "models/gemini-1.5-pro-latest"
 
 def ask_gemini(prompt):
@@ -28,16 +29,14 @@ def ask_gemini(prompt):
             "maxOutputTokens": 512
         }
         res = requests.post(url, json=payload).json()
-        # Extract generated text
         if "candidates" in res and len(res["candidates"]) > 0:
             return res["candidates"][0].get("output", {}).get("content", [{}])[0].get("text", "No text returned")
         return "No text returned from API."
     except Exception as e:
         return f"Error: {e}"
+        
+#CHAT_BLOCK
 
-# --------------------------
-# Streamlit chat UI
-# --------------------------
 st.markdown("### 🤖 Ask the Privacy Bot")
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
@@ -54,15 +53,13 @@ for speaker, msg in st.session_state.chat_history:
     else:
         st.chat_message("assistant").write(msg)
 
-# --------------------------
-# Random seed
-# --------------------------
+#RANDOM_SEED
+
 RANDOM_STATE = 42
 np.random.seed(RANDOM_STATE)
 
-# --------------------------
-# Preprocessor
-# --------------------------
+#PREPROCESSOR
+
 def build_preprocessor(df, drop_cols=None):
     if drop_cols is None:
         drop_cols = []
@@ -89,9 +86,8 @@ def build_preprocessor(df, drop_cols=None):
     )
     return pre
 
-# --------------------------
-# Helper functions
-# --------------------------
+#HELPER_FUNCTIONS
+
 def clean_dataframe(df):
     df = df.copy()
     for col in df.columns:
@@ -151,9 +147,8 @@ def membership_inference_attack(df, target_col, clf_choice="LogisticRegression")
     acc = accuracy_score(y_te, preds)
     return {"mia_accuracy": float(acc), "binary": len(np.unique(y)) == 2}, clf
 
-# --------------------------
-# Streamlit dataset UI
-# --------------------------
+#STREAMLIT_DATASET_UI
+
 uploaded_file = st.file_uploader("Upload your dataset (CSV only)", type=["csv"])
 if uploaded_file is not None:
     raw_df = pd.read_csv(uploaded_file)
@@ -191,14 +186,14 @@ if uploaded_file is not None:
             ax.legend()
             st.pyplot(fig)
 
-            # QI groups info
+            #QI_GROUPS_INFO
             if qis:
                 anon_df["QIKey"] = anon_df[qis].astype(str).agg("|".join, axis=1)
                 k_sizes = anon_df.groupby("QIKey").size()
                 st.write(f"Number of QI groups (after anonymization): {len(k_sizes)}")
                 st.write(f"Minimum group size: {k_sizes.min() if not k_sizes.empty else 0}")
 
-            # Distribution of first QI
+            #DISTRIBUTION_OF_FIRST_UI
             if qis:
                 qi_to_plot = qis[0]
                 fig2, ax2 = plt.subplots()
@@ -207,7 +202,7 @@ if uploaded_file is not None:
                 plt.xticks(rotation=45)
                 st.pyplot(fig2)
 
-            # Download anonymized CSV
+            #DOWNLOAD_ANONYMISED_DATASET
             csv = anon_df.to_csv(index=False).encode('utf-8')
             st.download_button(
                 label="Download Anonymized Data as CSV",
