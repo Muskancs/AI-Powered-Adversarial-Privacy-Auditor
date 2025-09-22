@@ -15,7 +15,7 @@ import requests
 # --------------------------
 # Google Generative AI config
 # --------------------------
-GOOGLE_API_KEY = "AIzaSyDKvWRDWJLGRa-Te0skufDsmfLAjlIlQe4"  # Your API key
+GOOGLE_API_KEY = "add-your-own-API"  # Your API key
 MODEL = "models/gemini-1.5-pro-latest"
 
 def ask_gemini(prompt):
