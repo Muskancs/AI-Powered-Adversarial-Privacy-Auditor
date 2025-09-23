@@ -1,3 +1,6 @@
+
+# Libraries and modules
+
 import numpy as np
 import pandas as pd
 import os
@@ -18,12 +21,12 @@ from sklearn.model_selection import train_test_split
 
 RANDOM_STATE = 42
 np.random.seed(RANDOM_STATE)
-# -------------------------------
-# 1) Load any dataset
-# -------------------------------
+
+# Load any dataset
+
 def load_dataset():
     path = input("Enter dataset path (CSV/XLSX): ").strip()
-    path = path.strip('"').strip("'")  # Remove any quotes
+    path = path.strip('"').strip("'")
     print("DEBUG: path entered =", path)
     if path.lower().endswith(".csv"):
         df = pd.read_csv(path)
@@ -36,9 +39,8 @@ def load_dataset():
     return df
 raw_df = load_dataset()
 
-# -------------------------------
-# 2) User selects QIs and sensitive column
-# -------------------------------
+# User selects QIs and sensitive column
+
 print("\nSelect quasi-identifiers (comma-separated):")
 print("Columns:", list(raw_df.columns))
 qis = [q.strip() for q in input("QIs: ").strip().split(",")]
@@ -58,9 +60,8 @@ print(f"\nUsing QIs: {qis}")
 print(f"Sensitive column: {sensitive_col}")
 print(f"Target column (MIA): {target_col}")
 
-# -------------------------------
-# 3) Clean + detect QI types
-# -------------------------------
+# Clean + detect QI types
+
 def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
@@ -84,20 +85,17 @@ raw_df = clean_dataframe(raw_df)
 cat_qis = [q for q in qis if raw_df[q].dtype == "object" or raw_df[q].nunique() < 20]
 num_qis = [q for q in qis if q not in cat_qis]
 
-# -------------------------------
-# 4) Generalize QIs
-# -------------------------------
+# Generalize QIs
+
 def generalize_qis(df, num_qis, cat_qis):
     gen_df = df.copy()
 
-    # Numeric QIs → bucketize into quartiles; fallback to string if needed
     for col in num_qis:
         try:
             gen_df[col] = pd.qcut(gen_df[col], q=4, duplicates='drop').astype(str)
         except Exception:
             gen_df[col] = gen_df[col].astype(str)
 
-    # Categorical QIs → string & mask rare categories
     for col in cat_qis:
         s = gen_df[col].astype(str)
         freq = s.value_counts()
@@ -106,9 +104,8 @@ def generalize_qis(df, num_qis, cat_qis):
 
     return gen_df
 
-# -------------------------------
-# 5) k-Anonymity
-# -------------------------------
+# k-Anonymity
+
 def apply_k_anonymity(df, qis, k=3):
     if len(qis) == 0:
         return df.copy()
@@ -117,7 +114,6 @@ def apply_k_anonymity(df, qis, k=3):
     cat_local = [c for c in qis if not pd.api.types.is_numeric_dtype(df[c])]
 
     anon = generalize_qis(df, num_local, cat_local)
-    # Create in-frame key to avoid 1-D grouper issues
     anon = anon.copy()
     anon["QIKey"] = anon[qis].astype(str).agg("|".join, axis=1)
 
@@ -126,9 +122,8 @@ def apply_k_anonymity(df, qis, k=3):
     out = anon[anon["QIKey"].isin(keep_keys)].drop(columns=["QIKey"]).reset_index(drop=True)
     return out
 
-# -------------------------------
-# 6) l-Diversity
-# -------------------------------
+# l-Diversity
+
 def enforce_l_diversity(df, qis, sensitive_col, l=2):
     if df.empty or len(qis) == 0:
         return df.copy()
@@ -141,9 +136,8 @@ def enforce_l_diversity(df, qis, sensitive_col, l=2):
     out = safe_df[safe_df["QIKey"].isin(keep)].drop(columns=["QIKey"]).reset_index(drop=True)
     return out
 
-# -------------------------------
-# 7) t-Closeness (Total Variation Distance)
-# -------------------------------
+# t-Closeness (Total Variation Distance)
+
 def enforce_t_closeness(df, qis, sensitive_col, t=0.2):
     if df.empty or len(qis) == 0:
         return df.copy()
@@ -165,14 +159,10 @@ def enforce_t_closeness(df, qis, sensitive_col, t=0.2):
     out = safe_df[~safe_df["QIKey"].isin(bad_keys)].drop(columns=["QIKey"]).reset_index(drop=True)
     return out
 
-# -------------------------------
-# 8) Laplace noise for numeric columns
-# -------------------------------
+# Laplace noise for numeric columns
+
 def add_laplace_noise(df, eps=1.0, numeric_cols=None):
-    """
-    Adds Laplace noise per numeric column with sensitivity estimated as range.
-    Smaller eps => stronger privacy (more noise). Returns anon, meta.
-    """
+    
     anon = df.copy()
     meta = {}
     if numeric_cols is None:
@@ -197,9 +187,9 @@ def add_laplace_noise(df, eps=1.0, numeric_cols=None):
         anon[c] = np.clip(noised, vmin, vmax)
         meta[c] = {"eps": eps, "sensitivity": sens, "scale": scale}
     return anon, meta
-# -------------------------------
-# 9) Risk metrics
-# -------------------------------
+
+# Risk metrics
+
 def k_anonymity_risk(df, qis):
     if df.empty or len(qis) == 0:
         return {
@@ -231,9 +221,7 @@ def build_preprocessor(df, drop_cols=None):
         drop_cols = []
     X = df.drop(columns=drop_cols, errors="ignore").copy()
     num_cols = [c for c in X.columns if X[c].dtype != "object"]
-    # Only one-hot encode categorical columns with <30 unique values
     cat_cols = [c for c in X.columns if X[c].dtype == "object" and X[c].nunique() < 30]
-    # For high-cardinality columns, use LabelEncoder
     high_card_cols = [c for c in X.columns if X[c].dtype == "object" and X[c].nunique() >= 30]
     for col in high_card_cols:
         X[col] = LabelEncoder().fit_transform(X[col].astype(str))
@@ -252,10 +240,8 @@ def build_preprocessor(df, drop_cols=None):
     )
     return pre
 
+# Attacks
 
-# -------------------------------
-# 10) Attacks
-# -------------------------------
 def membership_inference_attack(df, target_col):
     feat_cols = [c for c in df.columns if c != target_col]
     if len(feat_cols) == 0:
@@ -281,10 +267,10 @@ def membership_inference_attack(df, target_col):
 
     pre = build_preprocessor(X_tr)
     clf = LogisticRegression(
-    max_iter=2000,            # more room to converge
+    max_iter=2000,
     solver="lbfgs",
     n_jobs=None,
-    class_weight="balanced"   # helps with label imbalance (seen in your runs)
+    class_weight="balanced"
 )
     pipe = Pipeline([("pre", pre), ("clf", clf)])
     pipe.fit(X_tr, y_tr)
@@ -326,10 +312,10 @@ def attribute_inference_attack(df, sensitive_col):
     X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.25, random_state=13, stratify=stratify)
     pre = build_preprocessor(X_tr)
     clf = LogisticRegression(
-    max_iter=2000,            # more room to converge
+    max_iter=2000,
     solver="lbfgs",
     n_jobs=None,
-    class_weight="balanced"   # helps with label imbalance (seen in your runs)
+    class_weight="balanced"
 )
     pipe = Pipeline([("pre", pre), ("clf", clf)])
     pipe.fit(X_tr, y_tr)
@@ -339,11 +325,11 @@ def attribute_inference_attack(df, sensitive_col):
         _auc = roc_auc_score(y_te, proba)
     else:
         proba = None
-        _auc = 0.5  # multiclass fallback for AUC
+        _auc = 0.5
 
     preds = pipe.predict(X_te)
     acc = accuracy_score(y_te, preds)
-    baseline = max(np.mean(y_te == y_te[0]), 1 - np.mean(y_te == y_te[0]))  # trivial baseline approx.
+    baseline = max(np.mean(y_te == y_te[0]), 1 - np.mean(y_te == y_te[0]))
 
     present_labels = np.unique(y_te)
     print("Attribute Inference Classification Report:\n", classification_report(y_te, preds, labels=present_labels))
@@ -355,9 +341,8 @@ def attribute_inference_attack(df, sensitive_col):
         "baseline_acc": float(baseline)
     }, pipe, artifacts
 
-# -------------------------------
 # 11) Overall score
-# -------------------------------
+
 def overall_risk_score(mia_auc, attr_auc, attr_acc_minus_base, prop_small_eq, weights=(0.35, 0.30, 0.20, 0.15)):
     mia_norm = max(0.0, (mia_auc - 0.5) / 0.5)
     attr_norm = max(0.0, (attr_auc - 0.5) / 0.5)
@@ -367,15 +352,9 @@ def overall_risk_score(mia_auc, attr_auc, attr_acc_minus_base, prop_small_eq, we
     return float(round(score01 * 100, 2))
 
 def utility_report(raw, other, id_cols=None):
-    """
-    Compare basic utility between two tables with same schema.
-    Returns dict of numeric mean/var deltas, categorical JS divergence, etc.
-    """
     rep = {"numeric": {}, "categorical": {}}
     numeric_cols = [c for c in raw.columns if pd.api.types.is_numeric_dtype(raw[c])]
     cat_cols = [c for c in raw.columns if not pd.api.types.is_numeric_dtype(raw[c])]
-
-    # Numerics: mean & variance deltas, Wasserstein distance
     for c in numeric_cols:
         r = pd.to_numeric(raw[c], errors="coerce")
         o = pd.to_numeric(other[c], errors="coerce")
@@ -387,10 +366,7 @@ def utility_report(raw, other, id_cols=None):
             "var_delta": float(abs(r.var(ddof=0) - o.var(ddof=0))),
             "wasserstein": float(wasserstein_distance(r, o))
         }
-
-    # Categoricals: Jensen–Shannon divergence of distributions
     def js_div(p, q):
-        # p, q as normalized arrays on same support
         m = 0.5*(p+q)
         def kl(a,b):
             a = np.clip(a, 1e-12, 1)
@@ -407,11 +383,10 @@ def utility_report(raw, other, id_cols=None):
         rep["categorical"][c] = {"JS_divergence": float(js_div(pr, po))}
     return rep
 
-# -------------------------------
-# 12) Run audit
-# -------------------------------
+# Run audit
+
 def run_audit(df, qis, sensitive_col, target_col):
-    # --- RAW ---
+
     mia_metrics, mia_pipe, mia_art = membership_inference_attack(df, target_col=target_col)
     attr_metrics, attr_pipe, attr_art = attribute_inference_attack(df, sensitive_col=sensitive_col)
     kanon_metrics = k_anonymity_risk(df, qis=qis)
@@ -423,13 +398,11 @@ def run_audit(df, qis, sensitive_col, target_col):
         prop_small_eq=kanon_metrics["prop_k<5_records"]
     )
 
-    # --- DEFENSES ---
     d1 = apply_k_anonymity(df, qis=qis, k=3)
     d2 = enforce_l_diversity(d1, qis=qis, sensitive_col=sensitive_col, l=2)
     d3 = enforce_t_closeness(d2, qis=qis, sensitive_col=sensitive_col, t=0.4)
     anon_df, dp_meta = add_laplace_noise(d3, eps=1.0)
 
-    # --- Anonymized evaluation ---
     if anon_df.empty:
         mia_metrics_an = {"mia_accuracy": 0.0, "binary": False}
         attr_metrics_an = {"attack_auc": 0.5, "attack_acc": 0.0, "baseline_acc": 0.0}
@@ -450,7 +423,6 @@ def run_audit(df, qis, sensitive_col, target_col):
             prop_small_eq=kanon_metrics_an["prop_k<5_records"]
         )
 
-        # --- Synthetic evaluation ---
     syn_df = synthesize_tabular(df, n=len(df))
     if syn_df.empty:
         syn_mia = {"mia_accuracy": 0.0, "binary": False}
@@ -467,13 +439,11 @@ def run_audit(df, qis, sensitive_col, target_col):
     util_syn  = utility_report(df, syn_df)  if not syn_df.empty  else {}
 
     return {
-        # raw
         "raw_mia": mia_metrics,
         "raw_attr": attr_metrics,
         "raw_kanon": kanon_metrics,
         "raw_overall_risk_0_100": base_score,
 
-        # anonymized
         "anon_mia": mia_metrics_an,
         "anon_attr": attr_metrics_an,
         "anon_kanon": kanon_metrics_an,
@@ -484,7 +454,6 @@ def run_audit(df, qis, sensitive_col, target_col):
         "dp_meta": dp_meta,
         "utility_anon": util_anon,
 
-        # synthetic
         "synth_mia": syn_mia,
         "synth_attr": syn_attr,
         "synth_kanon": syn_kanon,
@@ -493,12 +462,7 @@ def run_audit(df, qis, sensitive_col, target_col):
     }
 
 def synthesize_tabular(df, n=None, seed=RANDOM_STATE):
-    """
-    Lightweight synthetic generator (no external libs):
-    - Categorical: sample from empirical distribution
-    - Numeric: sample from N(mean, std) then clip to [min, max]
-    Preserves marginals (not multivariate correlations).
-    """
+    
     rng = np.random.default_rng(seed)
     n = n or len(df)
     syn = {}
@@ -536,7 +500,6 @@ def print_summary(results):
         any_col = next(iter(results['dp_meta']))
         print(f"DP (ε for example col): {results['dp_meta'][any_col]['eps']} (scale≈{results['dp_meta'][any_col]['scale']:.3f})")
 
-    # Utility quick view (median across columns)
     def summarize_utility(util):
         if not util: return {}
         num = util.get("numeric", {})
@@ -555,14 +518,10 @@ def print_summary(results):
     if ua: print("Utility(Anon) medians:", ua)
     if us: print("Utility(Synth) medians:", us)
 
+# Visualizations
 
-# -------------------------------
-# 13) Visualizations (safe & optional)
-# -------------------------------
 def visualize_privacy(raw_df, results, qis, sensitive_col, save_dir="results/plots"):
     os.makedirs(save_dir, exist_ok=True)
-
-    # 1) Sensitive attribute distribution
     if sensitive_col in raw_df.columns and not results["anonymized_df"].empty:
         fig, ax = plt.subplots(1, 2, figsize=(12, 5))
         sns.histplot(raw_df[sensitive_col], kde=False, ax=ax[0])
@@ -573,7 +532,6 @@ def visualize_privacy(raw_df, results, qis, sensitive_col, save_dir="results/plo
         plt.savefig(f"{save_dir}/sensitive_distribution.png")
         plt.show()
 
-        # KL divergence
         p = raw_df[sensitive_col].value_counts(normalize=True).sort_index()
         q = results["anonymized_df"][sensitive_col].value_counts(normalize=True).reindex(p.index).fillna(0)
         kl_div = entropy(p, q)
@@ -587,7 +545,6 @@ def visualize_privacy(raw_df, results, qis, sensitive_col, save_dir="results/plo
         plt.savefig(f"{save_dir}/sensitive_distribution_KL.png")
         plt.show()
 
-    # 2) QI correlation heatmap (factorized)
     if len(qis) > 0:
         corr_df = raw_df[qis].apply(lambda x: pd.factorize(x)[0])
         plt.figure(figsize=(8, 6))
@@ -597,7 +554,6 @@ def visualize_privacy(raw_df, results, qis, sensitive_col, save_dir="results/plo
         plt.savefig(f"{save_dir}/qi_correlation_heatmap.png")
         plt.show()
 
-    # 3) MIA ROC & Confusion Matrix (raw) if binary
     mia_art = results.get("mia_artifacts_raw", {})
     if mia_art and mia_art.get("binary") and mia_art.get("proba") is not None:
         y_te = mia_art["y_te"]
@@ -615,14 +571,8 @@ def visualize_privacy(raw_df, results, qis, sensitive_col, save_dir="results/plo
         plt.savefig(f"{save_dir}/mia_roc_curve_raw.png")
         plt.show()
 
-    # Confusion Matrix (works for multi-class too)
-    if mia_art and "X_te" in mia_art and "y_te" in mia_art:
-        # Rebuild a quick pipe for display consistency
-        # (No need; confusion matrix can be plotted with any estimator if we had it.
-        # We didn't store the estimator here, so we’ll just skip CM to keep it simple.)
+    if mia_art and "X_te" in mia_art and "y_te" in mia_art:       
         pass
-
-        # 3b) MIA PR curve (raw)
     if mia_art and mia_art.get("binary") and mia_art.get("proba") is not None:
         y_te = mia_art["y_te"]; y_probs = mia_art["proba"]
         prec, rec, _ = precision_recall_curve(y_te, y_probs)
@@ -634,7 +584,6 @@ def visualize_privacy(raw_df, results, qis, sensitive_col, save_dir="results/plo
         plt.savefig(f"{save_dir}/mia_pr_curve_raw.png")
         plt.show()
 
-    # 3c) MIA ROC/PR (anonymized) if available
     mia_art_an = results.get("mia_artifacts_anon", {})
     if mia_art_an and mia_art_an.get("binary") and mia_art_an.get("proba") is not None:
         y_te = mia_art_an["y_te"]; y_probs = mia_art_an["proba"]
@@ -660,9 +609,8 @@ def visualize_privacy(raw_df, results, qis, sensitive_col, save_dir="results/plo
 
 visualize_privacy(raw_df, results, qis, sensitive_col)
 
-# -------------------------------
-# 14) Save anonymized dataset + print summary
-# -------------------------------
+# Save anonymized dataset + print summary
+
 out_path = "anonymized_dataset.csv"
 if not results["anonymized_df"].empty:
     results["anonymized_df"].to_csv(out_path, index=False)
