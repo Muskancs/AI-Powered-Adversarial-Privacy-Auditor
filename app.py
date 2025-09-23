@@ -1,4 +1,4 @@
-#LIBRARIES
+#LIBRARIES AND MODULES
 
 import numpy as np
 import pandas as pd
@@ -37,11 +37,11 @@ def ask_gemini(prompt):
         
 #CHAT_BLOCK
 
-st.markdown("### 🤖 Ask the Privacy Bot")
+st.markdown("Ask the Privacy Bot")
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-user_input = st.chat_input("Ask me about k-anonymity, classifiers, or privacy...")
+user_input = st.chat_input("Ask me about k-anonymity, classifiers, or privacy!")
 if user_input:
     st.session_state.chat_history.append(("user", user_input))
     answer = ask_gemini(user_input)
