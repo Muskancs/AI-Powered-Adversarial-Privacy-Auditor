@@ -1,25 +1,26 @@
-#LIBRARIES AND MODULES
+
+# LIBRARIES AND MODULES
 
 import numpy as np
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder, StandardScaler
+from sklearn.compose import ColumnTransformer
 from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.ensemble import RandomForestClassifier
 import requests
 
-#GOOGLE-GEMINI-CONFIGURATION
+# GOOGLE GEMINI CONFIGURATION
 
 GOOGLE_API_KEY = "add-your-own-API"
 MODEL = "models/gemini-1.5-pro-latest"
 
-def ask_gemini(prompt):
+def ask_gemini(prompt: str) -> str:
+    """Call Google Gemini API to get response."""
     try:
         url = f"https://generativelanguage.googleapis.com/v1beta/{MODEL}:generateContent?key={GOOGLE_API_KEY}"
         payload = {
@@ -29,15 +30,15 @@ def ask_gemini(prompt):
             "maxOutputTokens": 512
         }
         res = requests.post(url, json=payload).json()
-        if "candidates" in res and len(res["candidates"]) > 0:
+        if "candidates" in res and res["candidates"]:
             return res["candidates"][0].get("output", {}).get("content", [{}])[0].get("text", "No text returned")
         return "No text returned from API."
     except Exception as e:
         return f"Error: {e}"
-        
-#CHAT_BLOCK
 
-st.markdown("Ask the Privacy Bot")
+# STREAMLIT CHAT BLOCK
+
+st.markdown("## Ask the Privacy Bot")
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
@@ -53,17 +54,18 @@ for speaker, msg in st.session_state.chat_history:
     else:
         st.chat_message("assistant").write(msg)
 
-#RANDOM_SEED
+# RANDOM SEED
 
 RANDOM_STATE = 42
 np.random.seed(RANDOM_STATE)
 
-#PREPROCESSOR
+# DATA PREPROCESSING
 
-def build_preprocessor(df, drop_cols=None):
+def build_preprocessor(df: pd.DataFrame, drop_cols=None):
     if drop_cols is None:
         drop_cols = []
     X = df.drop(columns=drop_cols, errors="ignore").copy()
+
     num_cols = [c for c in X.columns if pd.api.types.is_numeric_dtype(X[c])]
     cat_cols = [c for c in X.columns if not pd.api.types.is_numeric_dtype(X[c])]
     low_card_cols = [c for c in cat_cols if X[c].nunique() < 30]
@@ -72,10 +74,7 @@ def build_preprocessor(df, drop_cols=None):
     for col in high_card_cols:
         X[col] = LabelEncoder().fit_transform(X[col].astype(str))
 
-    try:
-        ohe = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
-    except TypeError:
-        ohe = OneHotEncoder(handle_unknown="ignore", sparse=False)
+    ohe = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
 
     pre = ColumnTransformer(
         transformers=[
@@ -86,9 +85,7 @@ def build_preprocessor(df, drop_cols=None):
     )
     return pre
 
-#HELPER_FUNCTIONS
-
-def clean_dataframe(df):
+def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     for col in df.columns:
         if df[col].dtype == "object":
@@ -97,7 +94,9 @@ def clean_dataframe(df):
             df[col] = pd.to_numeric(df[col], errors="coerce")
     return df
 
-def generalize_qis(df, num_qis, cat_qis):
+# K-ANONYMITY FUNCTIONS
+
+def generalize_qis(df: pd.DataFrame, num_qis, cat_qis) -> pd.DataFrame:
     gen_df = df.copy()
     for col in num_qis:
         gen_df[col] = pd.qcut(gen_df[col], q=4, duplicates='drop').astype(str)
@@ -108,7 +107,7 @@ def generalize_qis(df, num_qis, cat_qis):
         gen_df[col] = s.replace(rare, "Other")
     return gen_df
 
-def apply_k_anonymity(df, qis, k=3):
+def apply_k_anonymity(df: pd.DataFrame, qis, k=3) -> pd.DataFrame:
     if len(qis) == 0:
         return df.copy()
     anon = generalize_qis(
@@ -120,6 +119,8 @@ def apply_k_anonymity(df, qis, k=3):
     sizes = anon.groupby("QIKey").size()
     keep_keys = sizes[sizes >= k].index
     return anon[anon["QIKey"].isin(keep_keys)].drop(columns=["QIKey"]).reset_index(drop=True)
+
+# MEMBERSHIP INFERENCE ATTACK
 
 def membership_inference_attack(df, target_col, clf_choice="LogisticRegression"):
     feat_cols = [c for c in df.columns if c != target_col]
@@ -137,17 +138,13 @@ def membership_inference_attack(df, target_col, clf_choice="LogisticRegression")
     X_tr_p = pre.fit_transform(X_tr)
     X_te_p = pre.transform(X_te)
 
-    if clf_choice == "RandomForest":
-        clf = RandomForestClassifier(n_estimators=100, random_state=42)
-    else:
-        clf = LogisticRegression(max_iter=2000, solver="lbfgs", class_weight="balanced")
-
+    clf = RandomForestClassifier(n_estimators=100, random_state=RANDOM_STATE) if clf_choice == "RandomForest" else LogisticRegression(max_iter=2000, solver="lbfgs", class_weight="balanced")
     clf.fit(X_tr_p, y_tr)
     preds = clf.predict(X_te_p)
     acc = accuracy_score(y_te, preds)
     return {"mia_accuracy": float(acc), "binary": len(np.unique(y)) == 2}, clf
 
-#STREAMLIT_DATASET_UI
+# STREAMLIT DATASET UI
 
 uploaded_file = st.file_uploader("Upload your dataset (CSV only)", type=["csv"])
 if uploaded_file is not None:
@@ -169,31 +166,32 @@ if uploaded_file is not None:
             mia_metrics_raw, _ = membership_inference_attack(raw_df, target_col, clf_choice)
             mia_metrics_anon, _ = membership_inference_attack(anon_df, target_col, clf_choice)
 
-            st.write("**Results:**")
+            # RESULTS
+            st.subheader("Audit Results")
             st.write(f"Raw MIA Accuracy: {mia_metrics_raw['mia_accuracy']:.3f}")
             st.write(f"Anonymized MIA Accuracy: {mia_metrics_anon['mia_accuracy']:.3f}")
 
-            st.write("**Class balance in target column (raw):**")
+            st.write("**Class distribution in target column (raw):**")
             st.write(raw_df[target_col].value_counts())
-            st.write("**Class balance in target column (anonymized):**")
+            st.write("**Class distribution in target column (anonymized):**")
             st.write(anon_df[target_col].value_counts())
 
-            # Visualization
+            # VISUALIZATION
             fig, ax = plt.subplots()
-            sns.histplot(data=raw_df, x=sensitive_col, kde=False, ax=ax, label="Raw")
-            sns.histplot(data=anon_df, x=sensitive_col, kde=False, ax=ax, label="Anonymized")
+            sns.histplot(data=raw_df, x=sensitive_col, kde=False, color="blue", label="Raw", ax=ax)
+            sns.histplot(data=anon_df, x=sensitive_col, kde=False, color="orange", label="Anonymized", ax=ax)
             ax.set_title("Sensitive Attribute Distribution")
             ax.legend()
             st.pyplot(fig)
 
-            #QI_GROUPS_INFO
+            # QI GROUPS INFO
             if qis:
                 anon_df["QIKey"] = anon_df[qis].astype(str).agg("|".join, axis=1)
                 k_sizes = anon_df.groupby("QIKey").size()
                 st.write(f"Number of QI groups (after anonymization): {len(k_sizes)}")
                 st.write(f"Minimum group size: {k_sizes.min() if not k_sizes.empty else 0}")
 
-            #DISTRIBUTION_OF_FIRST_UI
+            # DISTRIBUTION OF FIRST QI
             if qis:
                 qi_to_plot = qis[0]
                 fig2, ax2 = plt.subplots()
@@ -202,7 +200,7 @@ if uploaded_file is not None:
                 plt.xticks(rotation=45)
                 st.pyplot(fig2)
 
-            #DOWNLOAD_ANONYMISED_DATASET
+            # DOWNLOAD ANONYMIZED DATASET
             csv = anon_df.to_csv(index=False).encode('utf-8')
             st.download_button(
                 label="Download Anonymized Data as CSV",
